@@ -4,7 +4,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sklearn.linear_model import LinearRegression
 import numpy as np
-import redis
 
 app = FastAPI(
     title="NTPD ML API",
@@ -29,28 +28,33 @@ y = np.array([10, 14, 18, 25, 29, 36, 40, 47])
 model = LinearRegression()
 model.fit(X, y)
 
-# konfiguracja Redis z zmiennych środowiskowych
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+APP_ENV_NAME = os.getenv("APP_ENV_NAME", "local")
 
 
 class PredictionInput(BaseModel):
-    feature1: float = Field(..., description="pierwsza cecha, np. liczba godzin")
-    feature2: float = Field(..., description="druga cecha, np. liczba projektów")
+    feature1: float = Field(..., description="pierwsza cecha")
+    feature2: float = Field(..., description="druga cecha")
 
 
 class PredictionOutput(BaseModel):
     prediction: float
+    environment: str
 
 
 @app.get("/")
 def read_root():
-    return {"message": "API dziala poprawnie"}
+    return {
+        "message": "API dziala poprawnie",
+        "environment": APP_ENV_NAME
+    }
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "environment": APP_ENV_NAME
+    }
 
 
 @app.get("/info")
@@ -59,41 +63,21 @@ def info():
         "model_type": "LinearRegression",
         "n_features": 2,
         "intercept": float(model.intercept_),
-        "coefficients": model.coef_.tolist()
+        "coefficients": model.coef_.tolist(),
+        "environment": APP_ENV_NAME
     }
-
-
-@app.get("/redis-health")
-def redis_health():
-    try:
-        client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
-        pong = client.ping()
-        return {
-            "redis_status": "connected",
-            "ping": pong
-        }
-    except Exception as e:
-        return {
-            "redis_status": "disconnected",
-            "error": str(e)
-        }
 
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(data: PredictionInput):
     try:
-        if data.feature1 is None or data.feature2 is None:
-            raise HTTPException(
-                status_code=400,
-                detail="Brak wartości: feature1 lub feature2"
-            )
-
         features = np.array([[data.feature1, data.feature2]])
         prediction = model.predict(features)[0]
 
-        return {"prediction": float(prediction)}
+        return {
+            "prediction": float(prediction),
+            "environment": APP_ENV_NAME
+        }
 
-    except HTTPException:
-        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Błąd predykcji: {str(e)}")
