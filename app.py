@@ -1,7 +1,10 @@
+import os
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 from sklearn.linear_model import LinearRegression
 import numpy as np
+import redis
 
 app = FastAPI(
     title="NTPD ML API",
@@ -26,7 +29,11 @@ y = np.array([10, 14, 18, 25, 29, 36, 40, 47])
 model = LinearRegression()
 model.fit(X, y)
 
-# modele danych wejściowych i wyjściowych
+# konfiguracja Redis z zmiennych środowiskowych
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+
+
 class PredictionInput(BaseModel):
     feature1: float = Field(..., description="pierwsza cecha, np. liczba godzin")
     feature2: float = Field(..., description="druga cecha, np. liczba projektów")
@@ -35,13 +42,16 @@ class PredictionInput(BaseModel):
 class PredictionOutput(BaseModel):
     prediction: float
 
+
 @app.get("/")
 def read_root():
     return {"message": "API dziala poprawnie"}
 
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 
 @app.get("/info")
 def info():
@@ -51,6 +61,23 @@ def info():
         "intercept": float(model.intercept_),
         "coefficients": model.coef_.tolist()
     }
+
+
+@app.get("/redis-health")
+def redis_health():
+    try:
+        client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
+        pong = client.ping()
+        return {
+            "redis_status": "connected",
+            "ping": pong
+        }
+    except Exception as e:
+        return {
+            "redis_status": "disconnected",
+            "error": str(e)
+        }
+
 
 @app.post("/predict", response_model=PredictionOutput)
 def predict(data: PredictionInput):
